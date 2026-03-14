@@ -1,6 +1,7 @@
 import os
 import re
-import logging  # <-- We still need this!
+import math # <-- NEW: Needed for pagination calculations
+import logging  
 from collections import Counter
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
@@ -12,21 +13,20 @@ from dotenv import load_dotenv
 # === LOAD ENVIRONMENT VARIABLES ===
 load_dotenv()
 
-# IF ON APPLE SILICON (M1/M2/M3), UNCOMMENT THE LINE BELOW:
-# pytesseract.pytesseract.tesseract_cmd = '/opt/homebrew/bin/tesseract'
-
+# Set Tesseract path from .env
+tess_path = os.getenv("TESSERACT_PATH")
+if tess_path:
+    pytesseract.pytesseract.tesseract_cmd = tess_path
+    
 app = Flask(__name__)
 
-# === NEW: Custom Log Filter to hide only image requests ===
+# === Custom Log Filter to hide only image requests ===
 class NoImagesFilter(logging.Filter):
     def filter(self, record):
-        # This checks the log message and returns False (don't log it) if it contains /images/
         return '/images/' not in record.getMessage()
 
-# Get the default Werkzeug logger and add our custom filter
 log = logging.getLogger('werkzeug')
 log.addFilter(NoImagesFilter())
-# --- End of new code ---
 
 # Pull the secret key and folder from the .env file
 app.secret_key = os.getenv("SECRET_KEY", "fallback_default_key")
@@ -97,6 +97,10 @@ def index():
     sort_order = request.args.get('sort', 'desc')
     exact_match = request.args.get('exact') == 'true'
     
+    # NEW: Get the current page from the URL (default to 1)
+    page = request.args.get('page', 1, type=int)
+    per_page = 50 # Number of images to show per page
+    
     top_terms = get_most_frequent_terms(limit=50)
 
     if sort_order == 'asc':
@@ -104,8 +108,9 @@ def index():
     else:
         all_records = ImageRecord.query.order_by(ImageRecord.created_at.desc()).all()
         
-    records = []
+    filtered_records = []
     
+    # Filter the records based on search
     if search_query:
         escaped_query = re.escape(search_query)
         if exact_match:
@@ -115,17 +120,35 @@ def index():
             
         for record in all_records:
             if record.extracted_text and pattern.search(record.extracted_text):
-                records.append(record)
+                filtered_records.append(record)
     else:
-        records = all_records
+        filtered_records = all_records
+        
+    # NEW: Pagination Logic
+    total_records = len(filtered_records)
+    total_pages = math.ceil(total_records / per_page)
+    
+    # Ensure page is within bounds
+    if page < 1:
+        page = 1
+    elif page > total_pages and total_pages > 0:
+        page = total_pages
+        
+    # Slice the list to only return the 50 items for the current page
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated_records = filtered_records[start_idx:end_idx]
         
     return render_template('index.html', 
-                           records=records, 
+                           records=paginated_records, 
                            search_query=search_query, 
                            top_terms=top_terms, 
                            sort_order=sort_order,
                            exact_match=exact_match,
-                           folder_path=IMAGE_FOLDER)
+                           folder_path=IMAGE_FOLDER,
+                           page=page,
+                           total_pages=total_pages,
+                           total_records=total_records)
 
 @app.route('/sync', methods=['POST'])
 def sync_folder():
@@ -169,5 +192,4 @@ def sync_folder():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    # Now you can keep debug=True for development without the spam!
     app.run(debug=True, port=5000)

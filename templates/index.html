@@ -76,7 +76,6 @@
                 </div>
             </div>
             
-            <!-- NEW: Checkbox to toggle between Substring and Exact Match -->
             <div class="text-center mt-2">
                 <div class="form-check form-check-inline">
                     <input class="form-check-input border-secondary" type="checkbox" id="exactMatch" name="exact" value="true" {% if exact_match %}checked{% endif %}>
@@ -90,7 +89,6 @@
             <span class="text-muted small fw-bold mb-2 d-block">Most Frequent Terms:</span>
             <div class="terms-wrapper shadow-sm">
                 {% for term, count in top_terms %}
-                    <!-- NEW: Appended &exact=true to guarantee the results match the count -->
                     <a href="/?q={{ term }}&exact=true&sort={{ sort_order }}" title="Appears in {{ count }} images" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge d-inline-block me-1 mb-2">
                         {{ term }} <span class="badge bg-primary rounded-circle ms-1">{{ count }}</span>
                     </a>
@@ -116,17 +114,20 @@
     <div class="d-flex justify-content-between align-items-end mb-3 pb-2 border-bottom">
         <div>
             <h4 class="mb-0">Images</h4>
-            <!-- DYNAMIC RESULTS COUNTER -->
+            <!-- UPDATED DYNAMIC RESULTS COUNTER (Shows total database matches, not just page length) -->
             {% if search_query %}
                 <small class="text-muted">
-                    <strong>{{ records|length }}</strong> result{% if records|length != 1 %}s{% endif %} for <strong>"{{ search_query }}"</strong>
+                    <strong>{{ total_records }}</strong> result{% if total_records != 1 %}s{% endif %} for <strong>"{{ search_query }}"</strong>
+                </small>
+            {% else %}
+                <small class="text-muted">
+                    <strong>{{ total_records }}</strong> total images
                 </small>
             {% endif %}
         </div>
         
         <form action="/" method="GET" class="d-flex align-items-center m-0">
             <input type="hidden" name="q" value="{{ search_query }}">
-            <!-- Pass exact state to sorting mechanism so switching order doesn't break count -->
             {% if exact_match %}
                 <input type="hidden" name="exact" value="true">
             {% endif %}
@@ -139,6 +140,7 @@
         </form>
     </div>
 
+    <!-- MAIN IMAGE LOOP -->
     <div class="row">
         <div class="col-12">
             {% for record in records %}
@@ -146,7 +148,7 @@
                 <div class="row g-0">
                     <div class="col-md-4">
                         <a href="{{ url_for('serve_image', filename=record.filename) }}" class="lightbox-trigger">
-                            <img src="{{ url_for('serve_image', filename=record.filename) }}" class="img-preview" alt="Screenshot">
+                            <img src="{{ url_for('serve_image', filename=record.filename) }}" class="img-preview" alt="Screenshot" loading="lazy">
                         </a>
                     </div>
                     <div class="col-md-8">
@@ -158,7 +160,6 @@
                                     <button class="btn btn-sm btn-outline-secondary copy-btn" data-text="{{ record.extracted_text }}">📋 Copy Text</button>
                                 </div>
                             </div>
-                            <!-- NEW: Pass exact_match to highlighter so it only turns the exact word yellow -->
                             <div class="text-box flex-grow-1">{% if record.extracted_text %}{{ record.extracted_text | highlight(search_query, exact_match) }}{% else %}<em>No text detected.</em>{% endif %}</div>
                         </div>
                     </div>
@@ -172,6 +173,31 @@
             {% endfor %}
         </div>
     </div>
+
+    <!-- NEW: PAGINATION CONTROLS -->
+    {% if total_pages > 1 %}
+    <nav aria-label="Page navigation" class="mt-4 mb-5">
+        <ul class="pagination justify-content-center">
+            
+            <!-- Previous Button -->
+            <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                <a class="page-link" href="/?q={{ search_query }}&sort={{ sort_order }}{% if exact_match %}&exact=true{% endif %}&page={{ page - 1 }}">Previous</a>
+            </li>
+            
+            <!-- Page Indicator -->
+            <li class="page-item disabled">
+                <span class="page-link text-dark fw-bold bg-light">Page {{ page }} of {{ total_pages }}</span>
+            </li>
+
+            <!-- Next Button -->
+            <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+                <a class="page-link" href="/?q={{ search_query }}&sort={{ sort_order }}{% if exact_match %}&exact=true{% endif %}&page={{ page + 1 }}">Next</a>
+            </li>
+
+        </ul>
+    </nav>
+    {% endif %}
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
