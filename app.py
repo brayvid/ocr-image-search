@@ -74,7 +74,7 @@ STOP_WORDS = {
     "pm", "am", "com", "www", "http", "https", "net", "org", "the", "too", "get", "got", "new"
 }
 
-def get_most_frequent_terms(limit=50):
+def get_most_frequent_terms(limit=20):
     all_texts = db.session.query(ImageRecord.extracted_text).filter(ImageRecord.extracted_text.isnot(None)).all()
     document_word_counts = Counter()
     
@@ -101,7 +101,7 @@ def index():
     page = request.args.get('page', 1, type=int)
     per_page = 50 # Number of images to show per page
     
-    top_terms = get_most_frequent_terms(limit=50)
+    top_terms = get_most_frequent_terms(limit=20)
 
     if sort_order == 'asc':
         all_records = ImageRecord.query.order_by(ImageRecord.created_at.asc()).all()
