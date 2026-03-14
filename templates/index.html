@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Search Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .search-container { background: #e9ecef; padding: 40px 0 20px 0; border-bottom: 1px solid #dee2e6; }
+        .img-preview { width: 100%; height: 250px; object-fit: contain; background: #f8f9fa; border-right: 1px solid #dee2e6; }
+        .text-box { white-space: pre-wrap; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 14px; background: #fdfdfd; padding: 15px; border: 1px solid #eee; border-radius: 5px; }
+        mark { font-weight: bold; box-shadow: 0 0 2px rgba(0,0,0,0.2); }
+        .term-badge { transition: all 0.2s; cursor: pointer; text-decoration: none; }
+        .term-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        /* Loading Overlay Overlay */
+        #loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; color: white; flex-direction: column; justify-content: center; align-items: center; }
+    </style>
+</head>
+<body class="bg-light">
+
+<!-- Loading Overlay -->
+<div id="loading-overlay">
+    <div class="spinner-border text-light mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+    <h4>Syncing Google Drive Folder...</h4>
+    <p>Running text recognition on new screenshots. This may take a few minutes depending on how many new images there are.</p>
+</div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+        <a class="navbar-brand" href="/">🔍 Local Text Database</a>
+        
+        <!-- NEW SYNC BUTTON -->
+        <form action="/sync" method="POST" class="m-0 ms-auto" onsubmit="document.getElementById('loading-overlay').style.display='flex';">
+            <button class="btn btn-success" type="submit">🔄 Sync New Screenshots</button>
+        </form>
+        
+    </div>
+</nav>
+
+<!-- Hero Search Area -->
+<div class="search-container text-center shadow-sm">
+    <div class="container">
+        <h2 class="mb-3">Search Your Screenshots</h2>
+        <form action="/" method="GET" class="d-flex justify-content-center mb-4">
+            <div class="input-group input-group-lg w-75 shadow-sm">
+                <input type="text" class="form-control" name="q" value="{{ search_query }}" placeholder="Type a word to search extracted text..." autofocus>
+                <button class="btn btn-primary px-4" type="submit">Search</button>
+                {% if search_query %}
+                    <a href="/" class="btn btn-outline-danger px-4">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+
+        <!-- Frequent Terms Section -->
+        {% if top_terms %}
+        <div class="mt-2">
+            <span class="text-muted small me-2"><strong>Frequent terms:</strong></span>
+            {% for term, count in top_terms %}
+                <a href="/?q={{ term }}" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge me-1 mb-2">
+                    {{ term }} <span class="badge bg-primary rounded-circle ms-1">{{ count }}</span>
+                </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if search_query %}
+            <p class="mt-3 text-muted">Showing results for: <strong>"{{ search_query }}"</strong></p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="container mt-4">
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm">
+              {{ message }}
+              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Results List View -->
+    <div class="row">
+        <div class="col-12">
+            {% for record in records %}
+            <div class="card shadow-sm mb-4 overflow-hidden">
+                <div class="row g-0">
+                    <!-- Image Side -->
+                    <div class="col-md-4">
+                        <!-- Updated URL to serve from Google Drive -->
+                        <a href="{{ url_for('serve_image', filename=record.filename) }}" target="_blank">
+                            <img src="{{ url_for('serve_image', filename=record.filename) }}" class="img-preview" alt="Screenshot">
+                        </a>
+                    </div>
+                    <!-- Text Side -->
+                    <div class="col-md-8">
+                        <div class="card-body h-100 d-flex flex-column">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h5 class="card-title text-truncate mb-0" style="max-width: 70%;" title="{{ record.filename }}">{{ record.filename }}</h5>
+                                <button class="btn btn-sm btn-outline-secondary copy-btn" data-text="{{ record.extracted_text }}">📋 Copy Text</button>
+                            </div>
+                            <div class="text-box flex-grow-1">{% if record.extracted_text %}{{ record.extracted_text | highlight(search_query) }}{% else %}<em>No text detected.</em>{% endif %}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-5">
+                <h4>No screenshots found in database.</h4>
+                <p>Click "Sync New Screenshots" in the top right corner to scan your Google Drive folder.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Copy to Clipboard Script -->
+<script>
+    document.querySelectorAll('.copy-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const textToCopy = this.getAttribute('data-text');
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const originalText = this.innerHTML;
+                this.innerHTML = "✅ Copied!";
+                this.classList.remove('btn-outline-secondary');
+                this.classList.add('btn-success');
+                setTimeout(() => {
+                    this.innerHTML = originalText;
+                    this.classList.remove('btn-success');
+                    this.classList.add('btn-outline-secondary');
+                }, 2000);
+            });
+        });
+    });
+</script>
+</body>
+</html>
