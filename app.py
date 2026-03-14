@@ -124,9 +124,9 @@ def index():
     else:
         filtered_records = all_records
         
-    # NEW: Pagination Logic
+    # Pagination Logic
     total_records = len(filtered_records)
-    total_pages = math.ceil(total_records / per_page)
+    total_pages = int(math.ceil(total_records / per_page))
     
     # Ensure page is within bounds
     if page < 1:
