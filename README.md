@@ -1,4 +1,3 @@
-
 # OCR Image Search
 
 A local web app that scans a folder of images and uses OCR to make the text inside them fully searchable.
@@ -17,72 +16,47 @@ A local web app that scans a folder of images and uses OCR to make the text insi
 
 ## Setup Instructions
 
-### 1. Prerequisites
-*   **Python 3.7+**
-*   **Tesseract OCR Engine:** You must install the Tesseract engine on your system.
-
-### 2. Install Tesseract
-This is the core OCR engine. Choose the instructions for your operating system.
+### 1. Install Tesseract OCR Engine
+This is the core OCR engine. You must install it on your system before proceeding.
 
 *   **macOS (via Homebrew):**
     ```bash
     brew install tesseract
     ```
-
 *   **Linux (Debian/Ubuntu):**
     ```bash
-    sudo apt update
-    sudo apt install tesseract-ocr
+    sudo apt update && sudo apt install tesseract-ocr
     ```
-
 *   **Windows:**
-    Download and run the official installer from [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki). During installation, **it is critical that you check the box to add Tesseract to your system's `PATH`**, otherwise the application will not be able to find it.
+    Download the official installer from [Tesseract at UB Mannheim](https://github.com/UB-Mannheim/tesseract/wiki). During installation, **it is critical that you check the box to add Tesseract to your system's `PATH`**.
 
-### 3. Set Up the Project
-First, create a folder for the project and navigate into it. Then, set up a Python virtual environment.
+### 2. Clone the Repository
+Open your terminal, navigate to where you want to store the project, and clone the repository:
+```bash
+git clone https://github.com/brayvid/ocr-image-search.git
+cd ocr-image-search
+```
+
+### 3. Create & Activate Python Environment
+It is highly recommended to use a virtual environment within the cloned project folder.
 
 ```bash
-mkdir ocr-image-search
-cd ocr-image-search
 python -m venv .venv
 ```
-Next, activate the virtual environment:
-*   **macOS / Linux:**
-    ```bash
-    source .venv/bin/activate
-    ```
-*   **Windows (Command Prompt):**
-    ```bash
-    .venv\Scripts\activate
-    ```
+Activate the environment:
+*   **macOS / Linux:** `source .venv/bin/activate`
+*   **Windows (Command Prompt):** `.venv\Scripts\activate`
 
 ### 4. Install Python Packages
-Install all the necessary Python libraries with this single command:
+With your virtual environment active, install all the required Python libraries:
 ```bash
 pip install Flask Flask-SQLAlchemy Pillow pytesseract python-dotenv tqdm
 ```
 
-### 5. Create Project Files
-Inside your `ocr-image-search` folder, create the following files:
-*   `app.py`
-*   `bulk_sync.py`
-*   `.env`
-*   A folder named `templates`, and inside it, a file named `index.html`.
+### 5. Create Configuration File (`.env`)
+This project uses a `.env` file to store your private folder path and secret key. **This is the only file you need to create manually after cloning.**
 
-Your final project structure should look like this:
-```
-ocr-image-search/
-│
-├── .env
-├── app.py
-├── bulk_sync.py
-├── templates/
-│   └── index.html
-└── .venv/
-```
-
-### 6. Configure the Application
-Open the `.env` file you just created and add the following lines. This is where you tell the app where to find your images.
+In the root of the project directory (`ocr-image-search/`), create a new file named `.env`. Copy and paste the following template into it:
 
 ```env
 # A random key for Flask session security. You can change this to anything.
@@ -91,19 +65,17 @@ SECRET_KEY=my_super_secure_random_key_123
 # The absolute path to the folder containing your images.
 IMAGE_FOLDER=/path/to/your/image/folder
 ```
+**You must replace `/path/to/your/image/folder` with the absolute path to your image directory.**
+*   **Windows:** Right-click the folder, go to "Properties", and copy the "Location" path, then manually add the folder name to the end (e.g., `C:\Users\YourUser\Documents\MyImages`).
+*   **macOS / Linux:** Drag and drop the folder directly into your terminal window, and it will paste the full path (e.g., `/Users/youruser/Documents/MyImages`).
 
-To get the absolute path to your folder:
-*   **Windows:** Right-click the folder, go to "Properties", and copy the "Location" path, then add the folder name to the end.
-*   **macOS / Linux:** Drag and drop the folder directly into your terminal window and it will paste the full path.
-
-### 7. Troubleshooting: "Tesseract is not in your PATH"
-If you run the app and get an error that Tesseract cannot be found, it means Python doesn't know where to look for the Tesseract executable you installed.
-
-**Solution:**
-1.  Find where Tesseract was installed on your system.
-2.  Open **both `app.py` and `bulk_sync.py`**.
-3.  Uncomment (remove the `#`) the line that starts with `pytesseract.pytesseract.tesseract_cmd = ...`
-4.  Replace the path with the correct one for your system.
+### 6. Troubleshooting: "Tesseract is not in your PATH"
+If you run the app and get an error that Tesseract cannot be found, you need to tell the app exactly where it is installed.
+1.  Find where the Tesseract executable is located on your system.
+2.  Open **both `app.py` and `bulk_sync.py`** in your code editor.
+3.  **Uncomment** (remove the `#`) the line that looks like:
+    `# pytesseract.pytesseract.tesseract_cmd = '/path/to/tesseract'`
+4.  **Replace the placeholder path** with the correct absolute path to your Tesseract executable.
 
 **Common Locations:**
 *   **macOS (Apple Silicon):** `'/opt/homebrew/bin/tesseract'`
