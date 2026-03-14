@@ -14,7 +14,8 @@
         mark { font-weight: bold; box-shadow: 0 0 2px rgba(0,0,0,0.2); }
         .term-badge { transition: all 0.2s; cursor: pointer; text-decoration: none; font-size: 0.85rem; }
         .term-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .terms-wrapper { max-height: 140px; overflow-y: auto; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.4); border: 1px solid #ddd; }
+        /* UPDATED: Removed max-height and overflow-y from .terms-wrapper */
+        .terms-wrapper { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.4); border: 1px solid #ddd; }
         
         #loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; color: white; flex-direction: column; justify-content: center; align-items: center; }
 
@@ -87,6 +88,7 @@
         {% if top_terms %}
         <div class="mt-2 text-start mx-auto w-75">
             <span class="text-muted small fw-bold mb-2 d-block">Most Frequent Terms:</span>
+            <!-- The .terms-wrapper div no longer has max-height or overflow-y -->
             <div class="terms-wrapper shadow-sm">
                 {% for term, count in top_terms %}
                     <a href="/?q={{ term }}&exact=true&sort={{ sort_order }}" title="Appears in {{ count }} images" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge d-inline-block me-1 mb-2">
@@ -174,7 +176,7 @@
         </div>
     </div>
 
-    <!-- NEW: PAGINATION CONTROLS -->
+    <!-- PAGINATION CONTROLS -->
     {% if total_pages > 1 %}
     <nav aria-label="Page navigation" class="mt-4 mb-5">
         <ul class="pagination justify-content-center">
