@@ -5,20 +5,20 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 
 # Import your database and app context from your main app
-from app import app, db, ImageRecord, SCREENSHOTS_FOLDER, allowed_file
+from app import app, db, ImageRecord, IMAGE_FOLDER, allowed_file
 
 # IF ON APPLE SILICON, UNCOMMENT THIS:
-# pytesseract.pytesseract.tesseract_cmd = '/opt/homebrew/bin/tesseract'
+pytesseract.pytesseract.tesseract_cmd = '/opt/homebrew/bin/tesseract'
 
 def run_bulk_sync():
-    print(f"Scanning folder: {SCREENSHOTS_FOLDER}")
+    print(f"Scanning folder: {IMAGE_FOLDER}")
     
     with app.app_context():
         # Get list of what is already in the database
         existing_records = {record.filename for record in ImageRecord.query.all()}
         
         # Get all valid images in the Google Drive folder
-        all_files = [f for f in os.listdir(SCREENSHOTS_FOLDER) 
+        all_files = [f for f in os.listdir(IMAGE_FOLDER) 
                      if not f.startswith('.') and allowed_file(f)]
         
         # Filter down to ONLY the new images
@@ -34,7 +34,11 @@ def run_bulk_sync():
         
         # tqdm creates a beautiful loading bar in your terminal!
         for filename in tqdm(new_files, desc="Processing Images", unit="img"):
-            filepath = os.path.join(SCREENSHOTS_FOLDER, filename)
+            filepath = os.path.join(IMAGE_FOLDER, filename)
+            
+            # --- NEW: Get actual file creation date for sorting ---
+            file_stat = os.stat(filepath)
+            creation_time = getattr(file_stat, 'st_birthtime', file_stat.st_mtime)
             
             try:
                 img = Image.open(filepath)
@@ -42,7 +46,12 @@ def run_bulk_sync():
             except Exception as e:
                 extracted_text = f"Error processing: {e}"
             
-            new_record = ImageRecord(filename=filename, extracted_text=extracted_text)
+            # --- NEW: Save the creation_time to the database ---
+            new_record = ImageRecord(
+                filename=filename, 
+                extracted_text=extracted_text,
+                created_at=creation_time
+            )
             db.session.add(new_record)
             added_count += 1
             

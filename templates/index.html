@@ -3,19 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR Search Dashboard</title>
+    <title>OCR Image Search</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .search-container { background: #e9ecef; padding: 40px 0 20px 0; border-bottom: 1px solid #dee2e6; }
-        .img-preview { width: 100%; height: 250px; object-fit: contain; background: #f8f9fa; border-right: 1px solid #dee2e6; }
+        .img-preview { width: 100%; height: 250px; object-fit: contain; background: #f8f9fa; border-right: 1px solid #dee2e6; cursor: zoom-in; transition: opacity 0.2s; }
+        .img-preview:hover { opacity: 0.8; }
         .text-box { white-space: pre-wrap; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 14px; background: #fdfdfd; padding: 15px; border: 1px solid #eee; border-radius: 5px; }
         mark { font-weight: bold; box-shadow: 0 0 2px rgba(0,0,0,0.2); }
-        .term-badge { transition: all 0.2s; cursor: pointer; text-decoration: none; }
+        .term-badge { transition: all 0.2s; cursor: pointer; text-decoration: none; font-size: 0.85rem; }
         .term-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .terms-wrapper { max-height: 140px; overflow-y: auto; padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.4); border: 1px solid #ddd; }
         
-        /* Loading Overlay Overlay */
         #loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; color: white; flex-direction: column; justify-content: center; align-items: center; }
+
+        /* --- LIGHTBOX CSS --- */
+        #lightbox { display: none; position: fixed; z-index: 99999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.95); justify-content: center; align-items: center; user-select: none; }
+        #lightbox img { max-width: 90vw; max-height: 90vh; object-fit: contain; box-shadow: 0 0 30px rgba(0,0,0,0.8); border-radius: 4px; }
+        .lightbox-close { position: absolute; top: 20px; right: 30px; color: #ccc; font-size: 40px; font-weight: bold; cursor: pointer; transition: 0.2s; z-index: 100000; }
+        .lightbox-close:hover { color: #fff; }
+        .lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #ccc; font-size: 50px; cursor: pointer; transition: 0.2s; padding: 20px; z-index: 100000; }
+        .lightbox-nav:hover { color: #fff; background: rgba(255,255,255,0.1); border-radius: 10px; }
+        #lightbox-prev { left: 20px; }
+        #lightbox-next { right: 20px; }
+        .lightbox-counter { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: #ccc; font-family: monospace; font-size: 16px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px;}
     </style>
 </head>
 <body class="bg-light">
@@ -23,57 +35,73 @@
 <!-- Loading Overlay -->
 <div id="loading-overlay">
     <div class="spinner-border text-light mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
-    <h4>Syncing Google Drive Folder...</h4>
-    <p>Running text recognition on new screenshots. This may take a few minutes depending on how many new images there are.</p>
+    <h4>Syncing Image Directory...</h4>
+    <p>Running text recognition on new images. This may take a few minutes.</p>
+</div>
+
+<!-- Lightbox Overlay -->
+<div id="lightbox">
+    <span class="lightbox-close" id="lightbox-close">&times;</span>
+    <div class="lightbox-nav" id="lightbox-prev">&#10094;</div>
+    <img id="lightbox-img" src="" alt="Fullscreen Image Display">
+    <div class="lightbox-nav" id="lightbox-next">&#10095;</div>
+    <div class="lightbox-counter" id="lightbox-counter">1 / 10</div>
 </div>
 
 <!-- Navbar -->
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
-        <a class="navbar-brand" href="/">🔍 Local Text Database</a>
-        
-        <!-- NEW SYNC BUTTON -->
+        <a class="navbar-brand" href="/">OCR Image Search</a>
         <form action="/sync" method="POST" class="m-0 ms-auto" onsubmit="document.getElementById('loading-overlay').style.display='flex';">
-            <button class="btn btn-success" type="submit">🔄 Sync New Screenshots</button>
+            <button class="btn btn-success" type="submit">Sync New Images</button>
         </form>
-        
     </div>
 </nav>
 
 <!-- Hero Search Area -->
 <div class="search-container text-center shadow-sm">
     <div class="container">
-        <h2 class="mb-3">Search Your Screenshots</h2>
-        <form action="/" method="GET" class="d-flex justify-content-center mb-4">
-            <div class="input-group input-group-lg w-75 shadow-sm">
-                <input type="text" class="form-control" name="q" value="{{ search_query }}" placeholder="Type a word to search extracted text..." autofocus>
-                <button class="btn btn-primary px-4" type="submit">Search</button>
-                {% if search_query %}
-                    <a href="/" class="btn btn-outline-danger px-4">Clear</a>
-                {% endif %}
+        <h2 class="mb-3">Search Image Text</h2>
+        
+        <form action="/" method="GET" class="mb-4">
+            <input type="hidden" name="sort" value="{{ sort_order }}">
+            
+            <div class="d-flex justify-content-center">
+                <div class="input-group input-group-lg w-75 shadow-sm">
+                    <input type="text" class="form-control border-secondary" name="q" value="{{ search_query }}" placeholder="Type a word to search extracted text..." autofocus>
+                    <button class="btn btn-primary px-4" type="submit">Search</button>
+                    {% if search_query %}
+                        <a href="/?sort={{ sort_order }}" class="btn btn-outline-danger px-4">Reset</a>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- NEW: Checkbox to toggle between Substring and Exact Match -->
+            <div class="text-center mt-2">
+                <div class="form-check form-check-inline">
+                    <input class="form-check-input border-secondary" type="checkbox" id="exactMatch" name="exact" value="true" {% if exact_match %}checked{% endif %}>
+                    <label class="form-check-label text-muted small" for="exactMatch" style="user-select: none; cursor: pointer;">Exact whole-word match</label>
+                </div>
             </div>
         </form>
 
-        <!-- Frequent Terms Section -->
         {% if top_terms %}
-        <div class="mt-2">
-            <span class="text-muted small me-2"><strong>Frequent terms:</strong></span>
-            {% for term, count in top_terms %}
-                <a href="/?q={{ term }}" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge me-1 mb-2">
-                    {{ term }} <span class="badge bg-primary rounded-circle ms-1">{{ count }}</span>
-                </a>
-            {% endfor %}
+        <div class="mt-2 text-start mx-auto w-75">
+            <span class="text-muted small fw-bold mb-2 d-block">Most Frequent Terms:</span>
+            <div class="terms-wrapper shadow-sm">
+                {% for term, count in top_terms %}
+                    <!-- NEW: Appended &exact=true to guarantee the results match the count -->
+                    <a href="/?q={{ term }}&exact=true&sort={{ sort_order }}" title="Appears in {{ count }} images" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge d-inline-block me-1 mb-2">
+                        {{ term }} <span class="badge bg-primary rounded-circle ms-1">{{ count }}</span>
+                    </a>
+                {% endfor %}
+            </div>
         </div>
-        {% endif %}
-
-        {% if search_query %}
-            <p class="mt-3 text-muted">Showing results for: <strong>"{{ search_query }}"</strong></p>
         {% endif %}
     </div>
 </div>
 
 <div class="container mt-4">
-    <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -85,58 +113,150 @@
       {% endif %}
     {% endwith %}
 
-    <!-- Results List View -->
+    <div class="d-flex justify-content-between align-items-end mb-3 pb-2 border-bottom">
+        <div>
+            <h4 class="mb-0">Images</h4>
+            <!-- DYNAMIC RESULTS COUNTER -->
+            {% if search_query %}
+                <small class="text-muted">
+                    <strong>{{ records|length }}</strong> result{% if records|length != 1 %}s{% endif %} for <strong>"{{ search_query }}"</strong>
+                </small>
+            {% endif %}
+        </div>
+        
+        <form action="/" method="GET" class="d-flex align-items-center m-0">
+            <input type="hidden" name="q" value="{{ search_query }}">
+            <!-- Pass exact state to sorting mechanism so switching order doesn't break count -->
+            {% if exact_match %}
+                <input type="hidden" name="exact" value="true">
+            {% endif %}
+            
+            <label class="me-2 text-muted small fw-bold mb-0">Sort by Created Date:</label>
+            <select name="sort" class="form-select form-select-sm border-secondary shadow-sm w-auto" onchange="this.form.submit()">
+                <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>Latest First</option>
+                <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Oldest First</option>
+            </select>
+        </form>
+    </div>
+
     <div class="row">
         <div class="col-12">
             {% for record in records %}
             <div class="card shadow-sm mb-4 overflow-hidden">
                 <div class="row g-0">
-                    <!-- Image Side -->
                     <div class="col-md-4">
-                        <!-- Updated URL to serve from Google Drive -->
-                        <a href="{{ url_for('serve_image', filename=record.filename) }}" target="_blank">
+                        <a href="{{ url_for('serve_image', filename=record.filename) }}" class="lightbox-trigger">
                             <img src="{{ url_for('serve_image', filename=record.filename) }}" class="img-preview" alt="Screenshot">
                         </a>
                     </div>
-                    <!-- Text Side -->
                     <div class="col-md-8">
                         <div class="card-body h-100 d-flex flex-column">
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h5 class="card-title text-truncate mb-0" style="max-width: 70%;" title="{{ record.filename }}">{{ record.filename }}</h5>
-                                <button class="btn btn-sm btn-outline-secondary copy-btn" data-text="{{ record.extracted_text }}">📋 Copy Text</button>
+                                <h5 class="card-title text-truncate mb-0" style="max-width: 50%;" title="{{ record.filename }}">{{ record.filename }}</h5>
+                                <div>
+                                    <button class="btn btn-sm btn-outline-primary copy-btn" data-text="{{ folder_path.rstrip('/') }}/{{ record.filename }}">📂 Copy Path</button>
+                                    <button class="btn btn-sm btn-outline-secondary copy-btn" data-text="{{ record.extracted_text }}">📋 Copy Text</button>
+                                </div>
                             </div>
-                            <div class="text-box flex-grow-1">{% if record.extracted_text %}{{ record.extracted_text | highlight(search_query) }}{% else %}<em>No text detected.</em>{% endif %}</div>
+                            <!-- NEW: Pass exact_match to highlighter so it only turns the exact word yellow -->
+                            <div class="text-box flex-grow-1">{% if record.extracted_text %}{{ record.extracted_text | highlight(search_query, exact_match) }}{% else %}<em>No text detected.</em>{% endif %}</div>
                         </div>
                     </div>
                 </div>
             </div>
             {% else %}
             <div class="text-center text-muted py-5">
-                <h4>No screenshots found in database.</h4>
-                <p>Click "Sync New Screenshots" in the top right corner to scan your Google Drive folder.</p>
+                <h4>No images found.</h4>
+                <p>Click "Sync New Images" in the top right corner or clear your search terms.</p>
             </div>
             {% endfor %}
         </div>
     </div>
 </div>
 
-<!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- Copy to Clipboard Script -->
 <script>
+    // --- LIGHTBOX LOGIC ---
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+    const lightboxCounter = document.getElementById('lightbox-counter');
+    const triggers = document.querySelectorAll('.lightbox-trigger');
+    
+    let currentIndex = 0;
+    let imagesList = []; 
+
+    triggers.forEach((trigger, index) => {
+        imagesList.push(trigger.getAttribute('href'));
+        
+        trigger.addEventListener('click', function(e) {
+            e.preventDefault(); 
+            currentIndex = index;
+            showLightbox();
+        });
+    });
+
+    function showLightbox() {
+        if(imagesList.length === 0) return;
+        lightbox.style.display = 'flex';
+        updateLightboxImage();
+    }
+
+    function hideLightbox() {
+        lightbox.style.display = 'none';
+        lightboxImg.src = '';
+    }
+
+    function updateLightboxImage() {
+        lightboxImg.src = imagesList[currentIndex];
+        lightboxCounter.innerText = `${currentIndex + 1} / ${imagesList.length}`;
+    }
+
+    function navigateLightbox(direction) {
+        currentIndex += direction;
+        if (currentIndex < 0) currentIndex = imagesList.length - 1;
+        if (currentIndex >= imagesList.length) currentIndex = 0;
+        updateLightboxImage();
+    }
+
+    document.getElementById('lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); navigateLightbox(-1); });
+    document.getElementById('lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); navigateLightbox(1); });
+    document.getElementById('lightbox-close').addEventListener('click', hideLightbox);
+
+    lightbox.addEventListener('click', (e) => {
+        if (e.target === lightbox) {
+            hideLightbox();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (lightbox.style.display === 'flex') {
+            if (e.key === 'Escape') {
+                hideLightbox();
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault(); 
+                navigateLightbox(-1);
+            } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault(); 
+                navigateLightbox(1);
+            }
+        }
+    });
+
+    // --- COPY TO CLIPBOARD LOGIC ---
     document.querySelectorAll('.copy-btn').forEach(button => {
         button.addEventListener('click', function() {
             const textToCopy = this.getAttribute('data-text');
             navigator.clipboard.writeText(textToCopy).then(() => {
                 const originalText = this.innerHTML;
+                const originalClass = this.className;
+                
                 this.innerHTML = "✅ Copied!";
-                this.classList.remove('btn-outline-secondary');
-                this.classList.add('btn-success');
+                this.className = "btn btn-sm btn-success copy-btn";
+                
                 setTimeout(() => {
                     this.innerHTML = originalText;
-                    this.classList.remove('btn-success');
-                    this.classList.add('btn-outline-secondary');
+                    this.className = originalClass;
                 }, 2000);
             });
         });
