@@ -100,3 +100,9 @@ Your terminal will show that the server is running on `http://127.0.0.1:5000`. N
 
 ### 3. Keeping the Database Updated
 After you've added new images to your folder, simply click the green **"Sync New Images"** button in the top-right corner of the web app. It will quickly process only the new files and add them to your database.
+
+
+## Example
+![](example.png)
+---
+<p align="center">&copy; Copyright 2026 <a href="https://blakerayvid.com">Blake Rayvid</a>. All rights reserved.</p>
