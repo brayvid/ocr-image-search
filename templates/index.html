@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OCR Image Search</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>Image Text Search | Blake Rayvid</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .search-container { background: #e9ecef; padding: 30px 0; border-bottom: 1px solid #dee2e6; }
@@ -17,28 +18,30 @@
         mark { font-weight: bold; }
         .term-badge { transition: all 0.2s; cursor: pointer; text-decoration: none; font-size: 0.8rem; }
         .terms-wrapper { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.5); border: 1px solid #ddd; }
-        #lightbox { display: none; position: fixed; z-index: 99999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; }
+        #lightbox { display: none; position: fixed; z-index: 99999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); justify-content: center; align-items: center; user-select: none; }
         #lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
-        .lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 40px; cursor: pointer; padding: 20px; text-shadow: 2px 2px 5px #000; }
+        .lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); color: #fff; font-size: 40px; cursor: pointer; padding: 20px; text-shadow: 2px 2px 5px #000; z-index: 100001; }
         .page-item.active .page-link { text-decoration: underline; font-weight: bold; background-color: #0d6efd; color: white; }
         #loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999; color: white; flex-direction: column; justify-content: center; align-items: center; }
+        .lightbox-counter { position: absolute; bottom: 20px; color: white; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px; font-family: monospace; z-index: 100001; }
     </style>
 </head>
 <body class="bg-light">
 
 <div id="loading-overlay">
     <div class="spinner-border text-light mb-3"></div>
-    <h4>Processing Images...</h4>
+    <h4>Syncing and Processing...</h4>
 </div>
 
 <div id="lightbox">
     <div class="lightbox-nav" id="lightbox-prev" style="left:10px;">&#10094;</div>
     <img id="lightbox-img" src="">
     <div class="lightbox-nav" id="lightbox-next" style="right:10px;">&#10095;</div>
+    <div class="lightbox-counter" id="lightbox-counter"></div>
 </div>
 
 <nav class="navbar navbar-dark bg-dark px-4 shadow-sm">
-    <a class="navbar-brand fw-bold" href="/">OCR Image Search</a>
+    <a class="navbar-brand fw-bold" href="/">Image Text Search</a>
     <form action="/sync" method="POST" onsubmit="document.getElementById('loading-overlay').style.display='flex';">
         <button class="btn btn-success btn-sm px-3" type="submit">Sync New Images</button>
     </form>
@@ -55,12 +58,13 @@
             </div>
             <div class="mt-2">
                 <input type="checkbox" id="exactMatch" name="exact" value="true" {% if exact_match %}checked{% endif %} onchange="this.form.submit()">
-                <label for="exactMatch" class="text-muted small" style="cursor:pointer">Exact whole-word match</label>
+                <label for="exactMatch" class="text-muted small" style="cursor:pointer; user-select: none;">Exact whole-word match</label>
             </div>
         </form>
 
         {% if top_terms %}
         <div class="terms-wrapper w-75 mx-auto shadow-sm">
+            <p class="small text-muted fw-bold mb-2">Most Frequent Terms</p>
             {% for term, count in top_terms %}
                 <a href="/?q={{ term }}&exact=true&sort={{ sort_order }}" class="badge rounded-pill bg-white text-primary border border-primary p-2 term-badge d-inline-block me-1 mb-2">
                     {{ term }} <span class="badge bg-primary rounded-circle ms-1">{{ count }}</span>
@@ -72,19 +76,43 @@
 </div>
 
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
-        <div>
-            <h5 class="mb-0">Found <strong>{{ pagination.total }}</strong> images</h5>
-            {% if search_query %}<small class="text-muted">Filtering for "{{ search_query }}"</small>{% endif %}
-        </div>
-        <form action="/" method="GET" class="d-flex align-items-center">
-            <input type="hidden" name="q" value="{{ search_query }}">
-            {% if exact_match %}<input type="hidden" name="exact" value="true">{% endif %}
-            <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
-                <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>Latest First</option>
-                <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Oldest First</option>
-            </select>
-        </form>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="mb-3 border-bottom pb-2">
+        {% if records|length > 0 %}
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">Found <strong>{{ pagination.total }}</strong> matched images</h5>
+                    {% if search_query %}<small class="text-muted">Filtering for "{{ search_query }}"</small>{% endif %}
+                </div>
+                <form action="/" method="GET" class="d-flex align-items-center">
+                    <input type="hidden" name="q" value="{{ search_query }}">
+                    {% if exact_match %}<input type="hidden" name="exact" value="true">{% endif %}
+                    <select name="sort" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>Latest First</option>
+                        <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Oldest First</option>
+                    </select>
+                </form>
+            </div>
+        {% elif not folder_exists %}
+            <div class="text-center py-3">
+                <h5 class="mb-1 text-danger">Drive or Folder Not Found</h5>
+                <p class="text-muted mb-0">The folder at <code>{{ folder_path }}</code> is not accessible.</p>
+            </div>
+        {% elif pagination.total == 0 %}
+            <div class="text-center py-3">
+                <h5 class="mb-1 text-muted">No Results Found</h5>
+            </div>
+        {% endif %}
     </div>
 
     <div class="row">
@@ -93,19 +121,27 @@
             <div class="card shadow-sm">
                 <div class="row g-0">
                     <div class="col-md-4">
-                        <a href="{{ url_for('serve_image', filename=record.filename) }}" class="lightbox-trigger">
+                        <a href="{{ url_for('serve_image', filename=record.filename) }}" 
+                           class="lightbox-trigger"
+                           data-filename="{{ record.filename }}">
                             <img src="{{ url_for('serve_image', filename=record.filename) }}" class="img-preview w-100" loading="lazy">
                         </a>
                     </div>
                     <div class="col-md-8 p-3 d-flex flex-column" style="min-width: 0;">
                         <div class="d-flex justify-content-between align-items-start mb-2">
-                            <h6 class="text-truncate fw-bold mb-0" style="max-width: 60%;">{{ record.filename }}</h6>
+                            <h6 class="text-truncate fw-bold mb-0" style="max-width: 65%;">{{ record.filename }}</h6>
                             <div class="text-nowrap">
                                 <button class="btn btn-xs btn-outline-primary py-0 copy-btn" data-text="{{ folder_path }}/{{ record.filename | e }}">Path</button>
                                 <button class="btn btn-xs btn-outline-secondary py-0 copy-btn" data-text="{{ record.extracted_text | e }}">Text</button>
                             </div>
                         </div>
-                        <div class="text-box flex-grow-1">{% if record.extracted_text %}{{ record.extracted_text | highlight(search_query, exact_match) }}{% else %}<small class="text-muted">No text detected.</small>{% endif %}</div>
+                        <div class="text-box flex-grow-1">
+                            {% if record.extracted_text %}
+                                {{ record.extracted_text | highlight(search_query, exact_match) }}
+                            {% else %}
+                                <small class="text-muted">No text detected.</small>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -113,56 +149,109 @@
         {% endfor %}
     </div>
 
-    <!-- BUILT-IN ROBUST PAGINATION -->
-    {% if pagination.pages > 1 %}
+    {% if pagination.pages > 1 and records|length > 0 %}
     <nav class="my-5">
         <ul class="pagination justify-content-center">
             <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=pagination.prev_num) }}">&laquo;</a>
+                <a class="page-link" id="nav-prev-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=pagination.prev_num) }}">&laquo;</a>
             </li>
-            
             {% for p in pages_to_show %}
-                {% if p == None %}
-                    <li class="page-item disabled"><span class="page-link">...</span></li>
-                {% else %}
-                    <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=p) }}">{{ p }}</a>
-                    </li>
-                {% endif %}
+                {% if p == None %}<li class="page-item disabled"><span class="page-link">...</span></li>
+                {% else %}<li class="page-item {% if p == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=p) }}">{{ p }}</a>
+                </li>{% endif %}
             {% endfor %}
-
             <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=pagination.next_num) }}">&raquo;</a>
+                <a class="page-link" id="nav-next-link" href="{{ url_for('index', q=search_query, sort=sort_order, exact='true' if exact_match else 'false', page=pagination.next_num) }}">&raquo;</a>
             </li>
         </ul>
     </nav>
     {% endif %}
+
+    <footer class="mt-5 mb-4 py-4 border-top text-center text-muted small">
+        <p class="mb-1">&copy; <span id="year"></span> <a href="https://blakerayvid.com" class="text-muted text-decoration-none">Blake Rayvid</a>. All rights reserved.</p>
+    </footer>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
-    // Copy Logic
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // Use quotes to prevent VS Code diagnostics errors
+    const totalRecords = parseInt("{{ pagination.total or 0 }}");
+    const currentPage = parseInt("{{ pagination.page or 1 }}");
+    const perPage = 25; // MATCHED TO PYTHON per_page
+
+    const lb = document.getElementById('lightbox'), 
+          lbi = document.getElementById('lightbox-img'), 
+          lbc = document.getElementById('lightbox-counter'),
+          trigs = document.querySelectorAll('.lightbox-trigger'),
+          prevBtn = document.getElementById('nav-prev-link'),
+          nextBtn = document.getElementById('nav-next-link');
+    
+    let idx = 0;
+    const urls = Array.from(trigs).map(t => t.href);
+    const filenames = Array.from(trigs).map(t => t.dataset.filename);
+    const totalOnPage = urls.length;
+
+    function updateLightbox() {
+        if (totalOnPage === 0) return;
+        const globalIdx = ((currentPage - 1) * perPage) + idx + 1;
+        lbi.src = urls[idx];
+        lbc.innerText = `Image ${globalIdx} of ${totalRecords} — ${filenames[idx]}`;
+    }
+
+    function moveNext() {
+        if (idx < totalOnPage - 1) {
+            idx++;
+            updateLightbox();
+        } else if (nextBtn && !nextBtn.parentElement.classList.contains('disabled')) {
+            window.location.href = nextBtn.href + "&auto_open=first";
+        }
+    }
+
+    function movePrev() {
+        if (idx > 0) {
+            idx--;
+            updateLightbox();
+        } else if (prevBtn && !prevBtn.parentElement.classList.contains('disabled')) {
+            window.location.href = prevBtn.href + "&auto_open=last";
+        }
+    }
+
+    trigs.forEach((t, i) => t.onclick = (e) => { 
+        e.preventDefault(); idx = i; lb.style.display='flex'; updateLightbox(); 
+    });
+
+    lb.onclick = (e) => { if(e.target == lb) lb.style.display='none'; };
+    document.getElementById('lightbox-prev').onclick = (e) => { e.stopPropagation(); movePrev(); };
+    document.getElementById('lightbox-next').onclick = (e) => { e.stopPropagation(); moveNext(); };
+
+    window.onload = () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('auto_open') === 'first' && totalOnPage > 0) {
+            idx = 0; lb.style.display = 'flex'; updateLightbox();
+        } else if (params.get('auto_open') === 'last' && totalOnPage > 0) {
+            idx = totalOnPage - 1; lb.style.display = 'flex'; updateLightbox();
+        }
+    };
+
+    window.onkeydown = (e) => {
+        if(lb.style.display === 'flex'){
+            if(e.key === 'Escape') lb.style.display = 'none';
+            if(e.key === 'ArrowLeft' || e.key === 'ArrowUp') movePrev();
+            if(e.key === 'ArrowRight' || e.key === 'ArrowDown') moveNext();
+        }
+    };
+
     document.querySelectorAll('.copy-btn').forEach(btn => {
         btn.onclick = () => {
             navigator.clipboard.writeText(btn.getAttribute('data-text'));
-            const old = btn.innerText; btn.innerText = "✅";
-            setTimeout(() => btn.innerText = old, 1000);
+            const oldText = btn.innerText; btn.innerText = "✅";
+            setTimeout(() => btn.innerText = oldText, 1000);
         };
     });
-
-    // Lightbox Logic
-    const lb = document.getElementById('lightbox'), lbi = document.getElementById('lightbox-img'), trigs = document.querySelectorAll('.lightbox-trigger');
-    let idx = 0, urls = Array.from(trigs).map(t => t.href);
-    trigs.forEach((t, i) => t.onclick = (e) => { e.preventDefault(); idx = i; lb.style.display='flex'; lbi.src=urls[idx]; });
-    lb.onclick = (e) => { if(e.target == lb) lb.style.display='none'; };
-    document.getElementById('lightbox-prev').onclick = () => { idx = (idx > 0) ? idx - 1 : urls.length-1; lbi.src=urls[idx]; };
-    document.getElementById('lightbox-next').onclick = () => { idx = (idx < urls.length-1) ? idx + 1 : 0; lbi.src=urls[idx]; };
-    window.onkeydown = (e) => {
-        if(lb.style.display=='flex'){
-            if(e.key=='Escape') lb.style.display='none';
-            if(e.key=='ArrowLeft' || e.key=='ArrowUp') document.getElementById('lightbox-prev').click();
-            if(e.key=='ArrowRight' || e.key=='ArrowDown') document.getElementById('lightbox-next').click();
-        }
-    };
 </script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 import os
 import re
+import math
 import logging
 from collections import Counter
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
@@ -86,13 +87,18 @@ def index():
     sort_order = request.args.get('sort', 'desc')
     exact_match = request.args.get('exact') == 'true'
     page = request.args.get('page', 1, type=int)
+    per_page = 25 # Set to 25 as per your requirement
     
+    folder_exists = os.path.isdir(IMAGE_FOLDER) if IMAGE_FOLDER else False
+
+    # 1. Build initial query
     stmt = ImageRecord.query
     if query_text:
         if exact_match:
-            all_data = stmt.all()
+            all_rows = stmt.all()
             pattern = re.compile(rf'\b{re.escape(query_text)}\b', re.IGNORECASE)
-            valid_ids = [r.id for r in all_data if r.extracted_text and pattern.search(r.extracted_text)]
+            # Find IDs that match the regex pattern
+            valid_ids = [r.id for r in all_rows if r.extracted_text and pattern.search(r.extracted_text)]
             stmt = ImageRecord.query.filter(ImageRecord.id.in_(valid_ids))
         else:
             stmt = stmt.filter(ImageRecord.extracted_text.contains(query_text))
@@ -100,20 +106,21 @@ def index():
     if sort_order == 'asc': stmt = stmt.order_by(ImageRecord.created_at.asc())
     else: stmt = stmt.order_by(ImageRecord.created_at.desc())
 
-    pagination = stmt.paginate(page=page, per_page=50, error_out=False)
+    # 2. FILTER BY DISK EXISTENCE BEFORE PAGINATION
+    # We fetch IDs of files that actually exist to ensure pagination is accurate
+    all_potential = stmt.all()
+    actual_ids = []
+    if folder_exists:
+        for record in all_potential:
+            if os.path.exists(os.path.join(IMAGE_FOLDER, record.filename)):
+                actual_ids.append(record.id)
     
-    # --- SELF-HEALING CHECK ---
-    # Check if the 50 files on this page actually exist. If not, delete from DB.
-    ghosts_found = False
-    for record in pagination.items:
-        if not os.path.exists(os.path.join(IMAGE_FOLDER, record.filename)):
-            db.session.delete(record)
-            ghosts_found = True
-    
-    if ghosts_found:
-        db.session.commit()
-        # Refresh the current URL to show updated pagination/results
-        return redirect(request.full_path)
+    # 3. Re-query with ONLY existing file IDs
+    final_stmt = ImageRecord.query.filter(ImageRecord.id.in_(actual_ids))
+    if sort_order == 'asc': final_stmt = final_stmt.order_by(ImageRecord.created_at.asc())
+    else: final_stmt = final_stmt.order_by(ImageRecord.created_at.desc())
+
+    pagination = final_stmt.paginate(page=page, per_page=per_page, error_out=False)
     
     return render_template('index.html', 
                            pagination=pagination,
@@ -123,19 +130,14 @@ def index():
                            sort_order=sort_order, 
                            exact_match=exact_match,
                            folder_path=IMAGE_FOLDER,
+                           folder_exists=folder_exists,
                            pages_to_show=get_pagination_range(page, pagination.pages))
 
 @app.route('/sync', methods=['POST'])
 def sync_folder():
-    # 1. PRUNE: Remove records for files that no longer exist
-    all_records = ImageRecord.query.all()
-    removed_count = 0
-    for record in all_records:
-        if not os.path.exists(os.path.join(IMAGE_FOLDER, record.filename)):
-            db.session.delete(record)
-            removed_count += 1
-    
-    # 2. ADD: Add new files
+    if not os.path.exists(IMAGE_FOLDER):
+        flash(f"Sync failed: Folder not found at {IMAGE_FOLDER}", "danger")
+        return redirect(url_for('index'))
     existing = {r.filename for r in db.session.query(ImageRecord.filename).all()}
     added_count = 0
     for filename in os.listdir(IMAGE_FOLDER):
@@ -149,14 +151,8 @@ def sync_folder():
                 db.session.add(ImageRecord(filename=filename, extracted_text=text, created_at=ctime))
                 added_count += 1
             except: continue
-            
     db.session.commit()
-    
-    if added_count > 0 or removed_count > 0:
-        flash(f'Sync complete! Added {added_count} and removed {removed_count} missing images.', 'success')
-    else:
-        flash('Database is already up to date.', 'info')
-        
+    flash(f'Sync complete! Added {added_count} new images.', 'success')
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
