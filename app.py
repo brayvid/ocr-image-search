@@ -1,26 +1,23 @@
 import os
 import re
-import math # <-- NEW: Needed for pagination calculations
-import logging  
+import logging
 from collections import Counter
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from PIL import Image
 import pytesseract
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from dotenv import load_dotenv
 
-# === LOAD ENVIRONMENT VARIABLES ===
 load_dotenv()
 
-# Set Tesseract path from .env
 tess_path = os.getenv("TESSERACT_PATH")
 if tess_path:
     pytesseract.pytesseract.tesseract_cmd = tess_path
-    
+
 app = Flask(__name__)
 
-# === Custom Log Filter to hide only image requests ===
+# Silence image request logs
 class NoImagesFilter(logging.Filter):
     def filter(self, record):
         return '/images/' not in record.getMessage()
@@ -28,13 +25,10 @@ class NoImagesFilter(logging.Filter):
 log = logging.getLogger('werkzeug')
 log.addFilter(NoImagesFilter())
 
-# Pull the secret key and folder from the .env file
 app.secret_key = os.getenv("SECRET_KEY", "fallback_default_key")
 IMAGE_FOLDER = os.getenv("IMAGE_FOLDER")
 
-# === ISOLATE DATABASE OUTSIDE OF GOOGLE DRIVE ===
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'images.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'images.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -54,141 +48,90 @@ def allowed_file(filename):
 
 @app.template_filter('highlight')
 def highlight_filter(text, query, exact=False):
-    if not query or not text:
-        return text
+    if not query or not text: return text
+    # First, escape the text to prevent OCR junk from breaking HTML
+    safe_text = str(escape(text))
     escaped_query = re.escape(query)
-    
-    if exact:
-        pattern = re.compile(rf'(\b{escaped_query}\b)', re.IGNORECASE)
-    else:
-        pattern = re.compile(f"({escaped_query})", re.IGNORECASE)
-        
-    highlighted = pattern.sub(r'<mark class="bg-warning px-1 rounded">\1</mark>', text)
-    return Markup(highlighted)
+    pattern = re.compile(rf'(\b{escaped_query}\b)', re.IGNORECASE) if exact else re.compile(f"({escaped_query})", re.IGNORECASE)
+    return Markup(pattern.sub(r'<mark class="bg-warning px-1 rounded">\1</mark>', safe_text))
 
-STOP_WORDS = {
-    "the", "and", "to", "of", "in", "is", "it", "you", "that", "he", "was", "for", 
-    "on", "are", "with", "as", "we", "his", "they", "be", "at", "one", "have", "this", 
-    "from", "or", "had", "by", "not", "but", "some", "what", "there", "out", "all", 
-    "your", "can", "has", "any", "which", "their", "were", "when", "will", "how", 
-    "pm", "am", "com", "www", "http", "https", "net", "org", "the", "too", "get", "got", "new"
-}
+STOP_WORDS = {"the", "and", "to", "of", "in", "is", "it", "you", "that", "he", "was", "for", "on", "are", "with", "as", "we", "his", "they", "be", "at", "one", "have", "this", "from", "or", "had", "by", "not", "but", "some", "what", "there", "out", "all", "your", "can", "has", "any", "which", "their", "were", "when", "will", "how", "pm", "am", "com", "www", "http", "https", "net", "org", "get", "got", "new"}
 
 def get_most_frequent_terms(limit=20):
     all_texts = db.session.query(ImageRecord.extracted_text).filter(ImageRecord.extracted_text.isnot(None)).all()
     document_word_counts = Counter()
-    
     for text in all_texts:
         words_in_doc = re.findall(r'\b[a-z]{3,}\b', text[0].lower())
         unique_words_in_doc = set([w for w in words_in_doc if w not in STOP_WORDS])
         document_word_counts.update(unique_words_in_doc)
-        
     return document_word_counts.most_common(limit)
+
+# Logic to generate page numbers with ellipses
+def get_pagination_range(current_page, total_pages):
+    if total_pages <= 1: return []
+    pages = set([1, 2, 3, total_pages, total_pages-1, total_pages-2, current_page, current_page-1, current_page+1])
+    sorted_pages = sorted([p for p in pages if 1 <= p <= total_pages])
+    res = []
+    prev = 0
+    for p in sorted_pages:
+        if prev and p - prev > 1: res.append(None)
+        res.append(p)
+        prev = p
+    return res
 
 @app.route('/images/<path:filename>')
 def serve_image(filename):
-    if not IMAGE_FOLDER:
-        return "IMAGE_FOLDER not set in .env", 500
     return send_from_directory(IMAGE_FOLDER, filename)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    search_query = request.args.get('q', '').strip()
+    query_text = request.args.get('q', '').strip()
     sort_order = request.args.get('sort', 'desc')
     exact_match = request.args.get('exact') == 'true'
-    
-    # NEW: Get the current page from the URL (default to 1)
     page = request.args.get('page', 1, type=int)
-    per_page = 50 # Number of images to show per page
     
-    top_terms = get_most_frequent_terms(limit=20)
-
-    if sort_order == 'asc':
-        all_records = ImageRecord.query.order_by(ImageRecord.created_at.asc()).all()
-    else:
-        all_records = ImageRecord.query.order_by(ImageRecord.created_at.desc()).all()
-        
-    filtered_records = []
-    
-    # Filter the records based on search
-    if search_query:
-        escaped_query = re.escape(search_query)
+    stmt = ImageRecord.query
+    if query_text:
         if exact_match:
-            pattern = re.compile(rf'\b{escaped_query}\b', re.IGNORECASE)
+            # For exact match, we use a regex search in SQLite or filter after fetching
+            # For simplicity and reliability with 3000 images, we fetch IDs and filter
+            all_data = stmt.all()
+            pattern = re.compile(rf'\b{re.escape(query_text)}\b', re.IGNORECASE)
+            valid_ids = [r.id for r in all_data if r.extracted_text and pattern.search(r.extracted_text)]
+            stmt = ImageRecord.query.filter(ImageRecord.id.in_(valid_ids))
         else:
-            pattern = re.compile(escaped_query, re.IGNORECASE)
-            
-        for record in all_records:
-            if record.extracted_text and pattern.search(record.extracted_text):
-                filtered_records.append(record)
-    else:
-        filtered_records = all_records
-        
-    # Pagination Logic
-    total_records = len(filtered_records)
-    total_pages = int(math.ceil(total_records / per_page))
+            stmt = stmt.filter(ImageRecord.extracted_text.contains(query_text))
+
+    if sort_order == 'asc': stmt = stmt.order_by(ImageRecord.created_at.asc())
+    else: stmt = stmt.order_by(ImageRecord.created_at.desc())
+
+    # USE BUILT-IN PAGINATE
+    pagination = stmt.paginate(page=page, per_page=50, error_out=False)
     
-    # Ensure page is within bounds
-    if page < 1:
-        page = 1
-    elif page > total_pages and total_pages > 0:
-        page = total_pages
-        
-    # Slice the list to only return the 50 items for the current page
-    start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    paginated_records = filtered_records[start_idx:end_idx]
-        
     return render_template('index.html', 
-                           records=paginated_records, 
-                           search_query=search_query, 
-                           top_terms=top_terms, 
-                           sort_order=sort_order,
+                           pagination=pagination,
+                           records=pagination.items, 
+                           search_query=query_text, 
+                           top_terms=get_most_frequent_terms(20), 
+                           sort_order=sort_order, 
                            exact_match=exact_match,
                            folder_path=IMAGE_FOLDER,
-                           page=page,
-                           total_pages=total_pages,
-                           total_records=total_records)
+                           pages_to_show=get_pagination_range(page, pagination.pages))
 
 @app.route('/sync', methods=['POST'])
 def sync_folder():
-    if not IMAGE_FOLDER or not os.path.exists(IMAGE_FOLDER):
-        flash(f"Directory not found. Please check IMAGE_FOLDER in your .env file.", "danger")
-        return redirect(url_for('index'))
-        
-    added_count = 0
-    existing_records = {record.filename for record in ImageRecord.query.all()}
-    
+    existing = {r.filename for r in db.session.query(ImageRecord.filename).all()}
     for filename in os.listdir(IMAGE_FOLDER):
-        if filename.startswith('.') or not allowed_file(filename):
-            continue
-            
-        if filename not in existing_records:
-            filepath = os.path.join(IMAGE_FOLDER, filename)
-            
-            file_stat = os.stat(filepath)
-            creation_time = getattr(file_stat, 'st_birthtime', file_stat.st_mtime)
-            
+        if filename.startswith('.') or not allowed_file(filename): continue
+        if filename not in existing:
+            path = os.path.join(IMAGE_FOLDER, filename)
+            stat = os.stat(path)
+            ctime = getattr(stat, 'st_birthtime', stat.st_mtime)
             try:
-                img = Image.open(filepath)
-                extracted_text = pytesseract.image_to_string(img).strip()
-            except Exception as e:
-                extracted_text = f"Error processing: {e}"
-            
-            new_record = ImageRecord(
-                filename=filename, 
-                extracted_text=extracted_text,
-                created_at=creation_time
-            )
-            db.session.add(new_record)
-            added_count += 1
-            
-    if added_count > 0:
-        db.session.commit()
-        flash(f'Sync complete! {added_count} new images processed.', 'success')
-    else:
-        flash('Folders synced. No new images found.', 'info')
-        
+                text = pytesseract.image_to_string(Image.open(path)).strip()
+                db.session.add(ImageRecord(filename=filename, extracted_text=text, created_at=ctime))
+            except: continue
+    db.session.commit()
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
