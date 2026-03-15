@@ -72,15 +72,7 @@ TESSERACT_PATH=/opt/homebrew/bin/tesseract
 *   **Windows:** Right-click the folder, go to "Properties", and copy the "Location" path, then manually add the folder name to the end (e.g., `C:\Users\YourUser\Documents\MyImages`).
 *   **macOS / Linux:** Drag and drop the folder directly into your terminal window, and it will paste the full path (e.g., `/Users/youruser/Documents/MyImages`).
 
-### 6. Troubleshooting: "Tesseract is not in your PATH"
-If you run the app and get an error that Tesseract cannot be found, you need to tell the app exactly where it is installed.
-1.  Find where the Tesseract executable is located on your system.
-2.  Open **both `app.py` and `bulk_sync.py`** in your code editor.
-3.  **Uncomment** (remove the `#`) the line that looks like:
-    `# pytesseract.pytesseract.tesseract_cmd = '/path/to/tesseract'`
-4.  **Replace the placeholder path** with the correct absolute path to your Tesseract executable.
-
-**Common Locations:**
+**Common Tesseract Locations:**
 *   **macOS (Apple Silicon):** `'/opt/homebrew/bin/tesseract'`
 *   **macOS (Intel):** `'/usr/local/bin/tesseract'`
 *   **Linux:** `'/usr/bin/tesseract'`
