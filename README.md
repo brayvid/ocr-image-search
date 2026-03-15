@@ -64,6 +64,9 @@ SECRET_KEY=my_super_secure_random_key_123
 
 # The absolute path to the folder containing your images.
 IMAGE_FOLDER=/path/to/your/image/folder
+
+# Apple Silicon (might differ on your machine)
+TESSERACT_PATH=/opt/homebrew/bin/tesseract
 ```
 **You must replace `/path/to/your/image/folder` with the absolute path to your image directory.**
 *   **Windows:** Right-click the folder, go to "Properties", and copy the "Location" path, then manually add the folder name to the end (e.g., `C:\Users\YourUser\Documents\MyImages`).
