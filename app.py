@@ -17,7 +17,6 @@ if tess_path:
 
 app = Flask(__name__)
 
-# Silence image request logs
 class NoImagesFilter(logging.Filter):
     def filter(self, record):
         return '/images/' not in record.getMessage()
@@ -49,7 +48,6 @@ def allowed_file(filename):
 @app.template_filter('highlight')
 def highlight_filter(text, query, exact=False):
     if not query or not text: return text
-    # First, escape the text to prevent OCR junk from breaking HTML
     safe_text = str(escape(text))
     escaped_query = re.escape(query)
     pattern = re.compile(rf'(\b{escaped_query}\b)', re.IGNORECASE) if exact else re.compile(f"({escaped_query})", re.IGNORECASE)
@@ -66,7 +64,6 @@ def get_most_frequent_terms(limit=20):
         document_word_counts.update(unique_words_in_doc)
     return document_word_counts.most_common(limit)
 
-# Logic to generate page numbers with ellipses
 def get_pagination_range(current_page, total_pages):
     if total_pages <= 1: return []
     pages = set([1, 2, 3, total_pages, total_pages-1, total_pages-2, current_page, current_page-1, current_page+1])
@@ -93,8 +90,6 @@ def index():
     stmt = ImageRecord.query
     if query_text:
         if exact_match:
-            # For exact match, we use a regex search in SQLite or filter after fetching
-            # For simplicity and reliability with 3000 images, we fetch IDs and filter
             all_data = stmt.all()
             pattern = re.compile(rf'\b{re.escape(query_text)}\b', re.IGNORECASE)
             valid_ids = [r.id for r in all_data if r.extracted_text and pattern.search(r.extracted_text)]
@@ -105,8 +100,20 @@ def index():
     if sort_order == 'asc': stmt = stmt.order_by(ImageRecord.created_at.asc())
     else: stmt = stmt.order_by(ImageRecord.created_at.desc())
 
-    # USE BUILT-IN PAGINATE
     pagination = stmt.paginate(page=page, per_page=50, error_out=False)
+    
+    # --- SELF-HEALING CHECK ---
+    # Check if the 50 files on this page actually exist. If not, delete from DB.
+    ghosts_found = False
+    for record in pagination.items:
+        if not os.path.exists(os.path.join(IMAGE_FOLDER, record.filename)):
+            db.session.delete(record)
+            ghosts_found = True
+    
+    if ghosts_found:
+        db.session.commit()
+        # Refresh the current URL to show updated pagination/results
+        return redirect(request.full_path)
     
     return render_template('index.html', 
                            pagination=pagination,
@@ -120,7 +127,17 @@ def index():
 
 @app.route('/sync', methods=['POST'])
 def sync_folder():
+    # 1. PRUNE: Remove records for files that no longer exist
+    all_records = ImageRecord.query.all()
+    removed_count = 0
+    for record in all_records:
+        if not os.path.exists(os.path.join(IMAGE_FOLDER, record.filename)):
+            db.session.delete(record)
+            removed_count += 1
+    
+    # 2. ADD: Add new files
     existing = {r.filename for r in db.session.query(ImageRecord.filename).all()}
+    added_count = 0
     for filename in os.listdir(IMAGE_FOLDER):
         if filename.startswith('.') or not allowed_file(filename): continue
         if filename not in existing:
@@ -130,8 +147,16 @@ def sync_folder():
             try:
                 text = pytesseract.image_to_string(Image.open(path)).strip()
                 db.session.add(ImageRecord(filename=filename, extracted_text=text, created_at=ctime))
+                added_count += 1
             except: continue
+            
     db.session.commit()
+    
+    if added_count > 0 or removed_count > 0:
+        flash(f'Sync complete! Added {added_count} and removed {removed_count} missing images.', 'success')
+    else:
+        flash('Database is already up to date.', 'info')
+        
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
