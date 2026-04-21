@@ -28,7 +28,9 @@ log.addFilter(NoImagesFilter())
 app.secret_key = os.getenv("SECRET_KEY", "fallback_default_key")
 IMAGE_FOLDER = os.getenv("IMAGE_FOLDER")
 
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'images.db')
+db_dir = os.getenv("DB_DIR", os.path.abspath(os.path.dirname(__file__)))
+os.makedirs(db_dir, exist_ok=True)  # Ensures the directory exists so SQLite doesn't throw an error
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(db_dir, 'images.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
