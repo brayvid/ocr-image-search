@@ -56,7 +56,7 @@ def highlight_filter(text, query, exact=False):
     pattern = re.compile(rf'(\b{escaped_query}\b)', re.IGNORECASE) if exact else re.compile(f"({escaped_query})", re.IGNORECASE)
     return Markup(pattern.sub(r'<mark class="bg-warning px-1 rounded">\1</mark>', safe_text))
 
-STOP_WORDS = {"the", "and", "to", "of", "in", "is", "it", "you", "that", "he", "was", "for", "on", "are", "with", "as", "we", "his", "they", "be", "at", "one", "have", "this", "from", "or", "had", "by", "not", "but", "some", "what", "there", "out", "all", "your", "can", "has", "any", "which", "their", "were", "when", "will", "how", "pm", "am", "com", "www", "http", "https", "net", "org", "get", "got", "new"}
+STOP_WORDS = {"even", "them", "now", "where", "such", "why", "make", "only", "just", "because", "also", "often", "its", "also", "use", "more", "like", "these", "about","than", "most", "may", "here", "other", "while", "into", "the", "and", "to", "of", "in", "is", "it", "you", "that", "he", "was", "for", "on", "are", "with", "as", "we", "his", "they", "be", "at", "one", "have", "this", "from", "or", "had", "by", "not", "but", "some", "what", "there", "out", "all", "your", "can", "has", "any", "which", "their", "were", "when", "will", "how", "pm", "am", "com", "www", "http", "https", "net", "org", "get", "got", "new"}
 
 def get_most_frequent_terms(limit=20):
     all_texts = db.session.query(ImageRecord.extracted_text).filter(ImageRecord.extracted_text.isnot(None)).all()
