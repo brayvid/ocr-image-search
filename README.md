@@ -50,7 +50,7 @@ Activate the environment:
 ### 4. Install Python Packages
 With your virtual environment active, install all the required Python libraries:
 ```bash
-pip install Flask Flask-SQLAlchemy Pillow pytesseract python-dotenv tqdm
+pip install -r requirements.txt
 ```
 
 ### 5. Create Configuration File (`.env`)
