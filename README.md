@@ -1,6 +1,6 @@
 # OCR Image Search
 
-A local web app that scans a folder of images and uses OCR to make the text inside them fully searchable.
+A local Flask app that scans a folder of images and uses optical character recognition (OCR) to make the text inside them fully searchable.
 
 ### Features
 *   **Automatic Folder Syncing:** Scans a local folder on your computer and automatically processes new images.
